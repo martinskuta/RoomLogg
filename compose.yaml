@@ -1,0 +1,7 @@
+﻿services:
+  roomlogg:
+    image: roomlogg
+    build:
+      context: .
+      dockerfile: RoomLogg/Dockerfile
+
