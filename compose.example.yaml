@@ -1,0 +1,21 @@
+services:
+  roomlogg:
+    image: ${ROOMLOGG_IMAGE:-ghcr.io/martinskuta/roomlogg:latest}
+    restart: unless-stopped
+    init: true
+    environment:
+      MQTT_HOST: ${MQTT_HOST:-}
+      MQTT_PORT: ${MQTT_PORT:-1883}
+      MQTT_USERNAME: ${MQTT_USERNAME:-}
+      MQTT_PASSWORD: ${MQTT_PASSWORD:-}
+    devices:
+      - "${ROOMLOGG_DEVICE:-/dev/hidraw0}:${ROOMLOGG_DEVICE:-/dev/hidraw0}:rw"
+    group_add:
+      - "${ROOMLOGG_HID_GID:?Set ROOMLOGG_HID_GID to the host HID device group ID}"
+    volumes:
+      - type: bind
+        source: /run/udev
+        target: /run/udev
+        read_only: true
+        bind:
+          create_host_path: false

@@ -1,7 +1,18 @@
 ﻿services:
   roomlogg:
-    image: roomlogg
-    build:
-      context: .
-      dockerfile: RoomLogg/Dockerfile
+    image: roomlogg:local
+    environment:
+      MQTT_HOST: ${MQTT_HOST:-}
+      MQTT_PORT: ${MQTT_PORT:-1883}
+      MQTT_USERNAME: ${MQTT_USERNAME:-}
+      MQTT_PASSWORD: ${MQTT_PASSWORD:-}
+    devices:
+      - "${ROOMLOGG_DEVICE:-/dev/hidraw0}:${ROOMLOGG_DEVICE:-/dev/hidraw0}:rw"
+    volumes:
+      - type: bind
+        source: '${ROOMLOGG_UDEV_PATH:-\\wsl.localhost\Ubuntu\run\udev}'
+        target: /run/udev
+        read_only: true
+        bind:
+          create_host_path: false
 
