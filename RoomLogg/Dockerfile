@@ -12,7 +12,7 @@ RUN apt-get update \
 WORKDIR /src
 COPY global.json .
 COPY ["RoomLogg/RoomLogg.csproj", "RoomLogg/"]
-COPY ["RoomLogg.Reader/RoomLogg.Reader.csproj", "RoomLogg.Reader/"]
+COPY ["RoomLogg.Device/RoomLogg.Device.csproj", "RoomLogg.Device/"]
 RUN dotnet restore "RoomLogg/RoomLogg.csproj" -a "$TARGETARCH" -p:PublishAot=true
 COPY . .
 RUN dotnet publish "RoomLogg/RoomLogg.csproj" --no-restore \
