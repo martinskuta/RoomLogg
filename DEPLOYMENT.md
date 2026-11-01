@@ -21,11 +21,14 @@ export ROOMLOGG_IMAGE=ghcr.io/martinskuta/roomlogg:1.2.3
 
 Copy `compose.example.yaml` to the Docker host. Set `ROOMLOGG_HID_GID` to the host group ID that owns the sensor device.
 `ROOMLOGG_DEVICE` defaults to `/dev/hidraw0`; set it if the device has a different path. Keep any MQTT settings in the
-runtime environment as described by the Compose example. For example:
+runtime environment as described by the Compose example. Set `HOME_ASSISTANT=true` to enable Home Assistant MQTT
+discovery for connected sensor channels; it defaults to `false`. For example:
 
 ```sh
 export ROOMLOGG_HID_GID=123
 export ROOMLOGG_DEVICE=/dev/hidraw0
+# Optional: enable Home Assistant MQTT discovery (defaults to false)
+export HOME_ASSISTANT=true
 ```
 
 ## Pull and start

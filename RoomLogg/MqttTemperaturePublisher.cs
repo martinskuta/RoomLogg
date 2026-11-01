@@ -1,4 +1,5 @@
 using System.Globalization;
+using System.Text.Json;
 using MQTTnet;
 using MQTTnet.Protocol;
 using RoomLogg.Device;
@@ -8,16 +9,24 @@ namespace RoomLogg;
 internal sealed class MqttTemperaturePublisher : IDisposable
 {
     private readonly IMqttClient? _client;
+    private readonly HashSet<int> _discoveredChannels = [];
+    private readonly bool _homeAssistantDiscovery;
     private readonly string _host;
     private readonly MqttClientOptions? _options;
     private readonly int _port;
     private readonly ChangedValuesTracker _reportedValues = new();
 
-    private MqttTemperaturePublisher(string host, int port, string? username, string? password)
+    private MqttTemperaturePublisher(
+        string host,
+        int port,
+        string? username,
+        string? password,
+        bool homeAssistantDiscovery)
     {
         host = host.Trim();
         _host = host;
         _port = port;
+        _homeAssistantDiscovery = homeAssistantDiscovery;
 
         if (string.IsNullOrWhiteSpace(host))
         {
@@ -52,11 +61,18 @@ internal sealed class MqttTemperaturePublisher : IDisposable
             throw new InvalidOperationException("MQTT_PORT must be an integer between 1 and 65535.");
         }
 
+        var homeAssistantText = Environment.GetEnvironmentVariable("HOME_ASSISTANT");
+        var homeAssistantDiscovery = false;
+        if (!string.IsNullOrWhiteSpace(homeAssistantText) &&
+            !bool.TryParse(homeAssistantText, out homeAssistantDiscovery))
+            throw new InvalidOperationException("HOME_ASSISTANT must be 'true' or 'false'.");
+
         return new MqttTemperaturePublisher(
             host,
             port,
             Environment.GetEnvironmentVariable("MQTT_USERNAME"),
-            Environment.GetEnvironmentVariable("MQTT_PASSWORD"));
+            Environment.GetEnvironmentVariable("MQTT_PASSWORD"),
+            homeAssistantDiscovery);
     }
 
     public async Task PublishChangesAsync(IEnumerable<SensorReading> readings)
@@ -74,10 +90,13 @@ internal sealed class MqttTemperaturePublisher : IDisposable
                 if (!reading.IsConnected)
                     continue;
 
-                await PublishIfChangedAsync(reading.Channel, "temperature", reading.Temperature?.DegreesCelsius);
-                await PublishIfChangedAsync(reading.Channel, "humidity", reading.Humidity?.Percent);
-                await PublishIfChangedAsync(reading.Channel, "dew_point", reading.DewPoint?.DegreesCelsius);
-                await PublishIfChangedAsync(reading.Channel, "heat_index", reading.HeatIndex?.DegreesCelsius);
+                if (!ChannelStatePayload.TryCreate(reading, out var payload))
+                    continue;
+
+                if (_homeAssistantDiscovery)
+                    await PublishDiscoveryIfNeededAsync(reading.Channel);
+
+                await PublishStateIfChangedAsync(reading.Channel, payload);
             }
         }
         catch (Exception exception)
@@ -87,33 +106,49 @@ internal sealed class MqttTemperaturePublisher : IDisposable
         }
     }
 
-    private async Task PublishIfChangedAsync(int channel, string metric, double? value)
+    private async Task PublishDiscoveryIfNeededAsync(int channel)
     {
-        if (value is not { } actualValue)
+        if (_discoveredChannels.Contains(channel))
             return;
 
-        var topic = $"roomlogg/channel/{channel}/{metric}";
-        if (_reportedValues.WasReported(topic, actualValue))
-            return;
-
+        var discovery = HomeAssistantDeviceDiscoveryPayload.CreateForChannel(channel);
         var message = new MqttApplicationMessageBuilder()
-            .WithTopic(topic)
-            .WithPayload(actualValue.ToString("G", CultureInfo.InvariantCulture))
+            .WithTopic($"homeassistant/device/roomlogg_channel_{channel}/config")
+            .WithPayload(JsonSerializer.SerializeToUtf8Bytes(
+                discovery,
+                MqttJsonContext.Default.HomeAssistantDeviceDiscoveryPayload))
             .WithQualityOfServiceLevel(MqttQualityOfServiceLevel.AtLeastOnce)
             .WithRetainFlag()
             .Build();
 
         await _client!.PublishAsync(message);
-        _reportedValues.MarkReported(topic, actualValue);
+        _discoveredChannels.Add(channel);
+    }
+
+    private async Task PublishStateIfChangedAsync(int channel, ChannelStatePayload payload)
+    {
+        if (_reportedValues.WasReported(channel, payload))
+            return;
+
+        var topic = $"roomlogg/channel/{channel}/state";
+        var message = new MqttApplicationMessageBuilder()
+            .WithTopic(topic)
+            .WithPayload(JsonSerializer.SerializeToUtf8Bytes(payload, MqttJsonContext.Default.ChannelStatePayload))
+            .WithQualityOfServiceLevel(MqttQualityOfServiceLevel.AtLeastOnce)
+            .WithRetainFlag()
+            .Build();
+
+        await _client!.PublishAsync(message);
+        _reportedValues.MarkReported(channel, payload);
     }
 }
 
 internal sealed class ChangedValuesTracker
 {
-    private readonly Dictionary<string, double> _reportedValues = new(StringComparer.Ordinal);
+    private readonly Dictionary<int, ChannelStatePayload> _reportedValues = [];
 
-    public bool WasReported(string topic, double value) =>
-        _reportedValues.TryGetValue(topic, out var reportedValue) && reportedValue.Equals(value);
+    public bool WasReported(int channel, ChannelStatePayload payload) =>
+        _reportedValues.TryGetValue(channel, out var reportedPayload) && reportedPayload.Equals(payload);
 
-    public void MarkReported(string topic, double value) => _reportedValues[topic] = value;
+    public void MarkReported(int channel, ChannelStatePayload payload) => _reportedValues[channel] = payload;
 }

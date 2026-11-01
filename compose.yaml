@@ -6,6 +6,7 @@
       MQTT_PORT: ${MQTT_PORT:-1883}
       MQTT_USERNAME: ${MQTT_USERNAME:-}
       MQTT_PASSWORD: ${MQTT_PASSWORD:-}
+      HOME_ASSISTANT: ${HOME_ASSISTANT:-false}
     devices:
       - "${ROOMLOGG_DEVICE:-/dev/hidraw0}:${ROOMLOGG_DEVICE:-/dev/hidraw0}:rw"
     volumes:
